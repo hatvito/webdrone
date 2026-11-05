@@ -70,6 +70,29 @@
       gap: 10px;
     }
 
+    .version-tag {
+      font-size: 0.74rem;
+      color: #94a3b8;
+      background-color: var(--bg-card);
+      border: 1px solid var(--border-color);
+      padding: 4px 9px;
+      border-radius: 6px;
+      font-family: var(--font-mono);
+      font-weight: 600;
+      letter-spacing: 0.3px;
+      user-select: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .version-tag::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background-color: #38bdf8;
+    }
+
     .badge {
       display: inline-flex;
       align-items: center;
@@ -483,6 +506,8 @@
     </div>
 
     <div class="header-actions">
+      <div class="version-tag" id="appVersionBadge" title="版本流水號 (Build Number)">v1.2.1-b20261105.1040</div>
+
       <div id="connectionBadge" class="badge">
         <div class="badge-dot"></div>
         <span id="connectionText">未連線</span>
@@ -1769,9 +1794,11 @@
       }
     }
 
+    const APP_VERSION = "v1.2.1-b20261105.1040";
+
     window.addEventListener("DOMContentLoaded", () => {
       loadPreset();
-      logMessage("系統就緒。請確認控制器已接上 USB 並開機，然後點擊「連接控制器」。", "info");
+      logMessage(`系統就緒 [版本: ${APP_VERSION}]。請確認控制器已接上 USB 並開機，然後點擊「連接控制器」。`, "info");
     });
   </script>
 </body>
