@@ -1,0 +1,649 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CoDrone EDU 控制台</title>
+<style>
+:root{--bg:#e8ebe6;--panel:#f5f6f2;--ink:#17262b;--mute:#66767a;--line:#cfd5ce;--teal:#0e6a73;--amber:#a85a00;--red:#b3261e;--con:#10201f;--conink:#cfe3df}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,"Segoe UI","Noto Sans TC",sans-serif}
+header{position:sticky;top:0;z-index:5;display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:10px 16px;background:var(--ink);color:#fff}
+header h1{font-size:17px;margin:0 auto 0 0;font-weight:650}
+button{font:inherit;padding:8px 14px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--ink);cursor:pointer}
+button:disabled{opacity:.45;cursor:not-allowed}
+button:focus-visible,input:focus-visible{outline:3px solid #f0b429;outline-offset:2px}
+button.primary{background:var(--teal);border-color:var(--teal);color:#fff}
+#estop{background:var(--red);border-color:#7d1912;color:#fff;font-weight:700;font-size:16px;padding:10px 22px}
+.badge{padding:3px 10px;border-radius:99px;background:#3a4a4f;font-size:13px}
+.badge.on{background:var(--teal)}
+main{display:grid;gap:14px;padding:14px;max-width:1240px;margin:0 auto}
+@media(min-width:960px){main{grid-template-columns:minmax(380px,460px) 1fr}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px}
+.panel h2{margin:0 0 10px;font-size:15px}
+.col{display:grid;gap:14px;align-content:start}
+.kv{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.kv div{background:#fff;border:1px solid var(--line);border-radius:6px;padding:8px 10px}
+.kv small{color:var(--mute);display:block}
+.kv b{font:600 22px ui-monospace,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums}
+.stale{opacity:.4}
+.imu{display:grid;grid-template-columns:5.2em 1fr 6.4em;gap:4px 8px;align-items:center;font-size:13px}
+.imu .g{grid-column:1/-1;margin-top:8px;font-weight:650;color:var(--teal)}
+.imu .v{text-align:right;font:13px ui-monospace,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums}
+.bar{position:relative;height:8px;background:#dde2dc;border-radius:4px}
+.bar::after{content:"";position:absolute;left:50%;top:-2px;bottom:-2px;width:1px;background:#8a9a9d}
+.bar i{position:absolute;top:0;bottom:0;background:var(--teal);border-radius:4px}
+.raw{margin-top:10px;font:12px ui-monospace,Menlo,Consolas,monospace;color:var(--mute)}
+.btns{display:flex;flex-wrap:wrap;gap:8px}
+.note{color:var(--mute);font-size:13px;margin:8px 0 0}
+.console{display:flex;flex-direction:column;min-height:420px}
+.tools{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-bottom:8px;font-size:13px}
+.tools button{padding:4px 10px}
+#log{flex:1;min-height:340px;max-height:72vh;overflow:auto;background:var(--con);color:var(--conink);border-radius:6px;padding:8px 10px;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace}
+#log div{white-space:pre-wrap;word-break:break-all}
+.tx{color:#8fd3e8}.err{color:#ff9d93}.warn{color:#f2c56b}.info{color:#9fb3ae}
+dialog{border:2px solid var(--amber);border-radius:10px;max-width:520px;padding:18px}
+dialog::backdrop{background:rgba(0,0,0,.5)}
+dialog h3{margin:0 0 8px}
+dialog ul{margin:8px 0 14px;padding-left:20px}
+dialog .row{display:flex;gap:10px;justify-content:flex-end}
+.twin{position:relative;height:380px;background:#e9ede8;border-radius:6px;overflow:hidden}
+.twin canvas{display:block;width:100%;height:100%;touch-action:none;cursor:grab}
+.twin .ov{position:absolute;left:8px;top:8px;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;background:rgba(245,246,242,.85);padding:5px 9px;border-radius:5px;white-space:pre;pointer-events:none}
+.rcol{display:grid;gap:14px;align-content:start}
+@media(prefers-reduced-motion:no-preference){button{transition:background .12s}}
+</style>
+</head>
+<body>
+<header>
+  <h1>CoDrone EDU 控制台</h1>
+  <span id="conn" class="badge">未連線</span>
+  <button id="btnConnect" class="primary">連接控制器</button>
+  <button id="btnDisc" disabled>中斷連線</button>
+  <button id="estop" disabled title="快捷鍵：Esc">緊急停止</button>
+</header>
+
+<main>
+  <div class="col">
+    <section class="panel">
+      <h2>飛行狀態</h2>
+      <div class="kv">
+        <div><small>電池</small><b id="bat" class="stale">—</b></div>
+        <div><small>高度（底部測距）</small><b id="alt" class="stale">—</b></div>
+        <div><small>飛行模式</small><b id="mode" class="stale" style="font-size:17px">—</b></div>
+      </div>
+      <p class="note" id="age">尚未收到無人機回應。</p>
+      <p class="note" id="rates"></p>
+    </section>
+
+    <section class="panel">
+      <h2>IMU 姿態（唯讀）</h2>
+      <div class="tools" style="margin-bottom:4px"><label><input type="checkbox" id="imuOn" checked> 即時更新 IMU 與數位雙生（各約 5 Hz）</label></div>
+      <div class="imu" id="imu"></div>
+      <div class="raw" id="raw">RawMotion 原始值：—</div>
+      <p class="note">只送出讀取要求（Request），不送任何動作指令。長條只是視覺參考，超出刻度時會頂到邊緣。</p>
+    </section>
+
+    <section class="panel">
+      <h2>飛行</h2>
+      <div class="btns">
+        <button id="btnFirst" disabled>首飛程序（起飛 → 懸停 2 秒 → 降落）</button>
+        <button id="btnTakeoff" disabled>起飛</button>
+        <button id="btnLand" disabled>降落</button>
+      </div>
+      <p class="note">起飛與首飛程序在送出前都會再請你確認。緊急停止在連線期間一直可用（右上角或 Esc）。</p>
+    </section>
+  </div>
+
+  <div class="rcol">
+  <section class="panel">
+    <h2>數位雙生（即時遙測，非模擬）</h2>
+    <div class="twin" id="twinHost"><canvas id="twinCanvas"></canvas><div class="ov" id="twinOv">未連線</div></div>
+    <div class="tools" style="margin:8px 0 0">
+      <button id="twinYaw">Yaw 歸零</button><button id="twinClear">清除軌跡</button>
+      <label><input type="checkbox" id="flipRoll"> Roll 反向</label>
+      <label><input type="checkbox" id="flipPitch" checked> Pitch 反向</label>
+      <label><input type="checkbox" id="flipYaw" checked> Yaw 反向</label>
+    </div>
+    <p class="note">拖曳旋轉、滾輪縮放、雙擊重設視角。模型放大約 3 倍；姿態、高度、位置都是無人機回報的值，畫面做了平滑，實際取樣約 5 Hz。軸向正負號尚待實機校正，可用上方開關翻轉（拿著無人機傾斜即可對照，不必起飛）。LED 顏色與螺旋槳轉動只代表飛行模式（待命＝綠、起飛/飛行＝青、降落＝琥珀、異常＝紅），不是轉速或 LED 的實際讀值。前方以紅色螺旋槳表示（方向待實機確認）。</p>
+  </section>
+  <section class="panel console">
+    <h2>主控台</h2>
+    <div class="tools">
+      <label><input type="checkbox" id="hidePoll" checked> 隱藏輪詢與搖桿封包（State / Range / IMU / Position / Joystick）</label>
+      <button id="btnClear">清除</button>
+    </div>
+    <div id="log" role="log" aria-live="off"></div>
+  </section>
+  </div>
+</main>
+
+<dialog id="dlg">
+  <h3 id="dlgTitle"></h3>
+  <div id="dlgBody"></div>
+  <div class="row"><button id="dlgNo">取消</button><button id="dlgYes" class="primary">確認，讓實機動作</button></div>
+</dialog>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+// ==PROTO-START==  （對應 PROTOCOL.md；其餘程式碼都建立在這一段之上）
+function crc16(bytes, crc = 0) {
+  for (const b of bytes) {
+    crc ^= b << 8;
+    for (let i = 0; i < 8; i++) crc = (crc & 0x8000) ? ((crc << 1) ^ 0x1021) & 0xFFFF : (crc << 1) & 0xFFFF;
+  }
+  return crc;
+}
+function pkt(type, payload, to = 0x10) {
+  const h = [type, payload.length, 0x70, to];
+  const c = crc16(payload, crc16(h));
+  return Uint8Array.from([0x0A, 0x55, ...h, ...payload, c & 255, c >> 8]);
+}
+const P = {
+  req: t => pkt(0x04, [t]),
+  cmd: (c, o) => pkt(0x11, [c, o]),
+  ctl: (r, p, y, t) => pkt(0x10, [r & 255, p & 255, y & 255, t & 255]),
+  takeoff: () => P.cmd(0x07, 0x11),
+  land: () => P.cmd(0x07, 0x12),
+  stop: () => P.cmd(0x01, 0x00)
+};
+class Parser {
+  constructor() { this.b = []; }
+  feed(chunk) {
+    const b = this.b, out = [];
+    for (const x of chunk) b.push(x);
+    for (;;) {
+      let i = -1;
+      for (let k = 0; k < b.length - 1; k++) if (b[k] === 0x0A && b[k + 1] === 0x55) { i = k; break; }
+      if (i < 0) { if (b.length > 1) b.splice(0, b.length - 1); break; }
+      if (i > 0) b.splice(0, i);
+      if (b.length < 6) break;
+      const len = b[3];
+      if (len > 128) { b.splice(0, 2); continue; }
+      const total = 8 + len;
+      if (b.length < total) break;
+      const f = b.slice(0, total);
+      if (crc16(f.slice(2, total - 2)) === (f[total - 2] | (f[total - 1] << 8))) {
+        out.push({ type: f[2], from: f[4], to: f[5], data: f.slice(6, total - 2), raw: f });
+        b.splice(0, total);
+      } else b.splice(0, 2);
+    }
+    return out;
+  }
+}
+// ==PROTO-END==
+
+const $ = id => document.getElementById(id);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const hex = a => Array.from(a, x => x.toString(16).padStart(2, '0').toUpperCase()).join(' ');
+const sgn = v => v > 127 ? v - 256 : v;
+const T_STATE = 0x40, T_RANGE = 0x45, T_MOTION = 0x44, T_RAW = 0x30, T_POS = 0x42, T_JOY = 0x71;
+const NAMES = { [T_STATE]: 'State', [T_RANGE]: 'Range', [T_MOTION]: 'Motion', [T_RAW]: 'RawMotion', [T_POS]: 'Position', [T_JOY]: 'Joystick' };
+const FLIGHT = { 0x10: '待命', 0x11: '啟動中', 0x12: '起飛中', 0x13: '飛行中', 0x14: '降落中', 0x15: '翻滾', 0x16: '反向', 0x20: '已停止', 0x30: '意外', 0x31: '錯誤' };
+
+let port, reader, writer, readDone, wq = Promise.resolve();
+let connected = false, busy = false, abort = false, current = Promise.resolve();
+const st = { flight: null, battery: null, t: 0 };
+
+// ---------- 主控台 ----------
+const logEl = $('log');
+function log(kind, text) {
+  const d = document.createElement('div');
+  d.className = kind;
+  const t = new Date();
+  d.textContent = t.toTimeString().slice(0, 8) + '.' + String(t.getMilliseconds()).padStart(3, '0') + '  ' + text;
+  const near = logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight < 40;
+  logEl.appendChild(d);
+  while (logEl.childElementCount > 600) logEl.firstChild.remove();
+  if (near) logEl.scrollTop = logEl.scrollHeight;
+}
+$('btnClear').onclick = () => { logEl.textContent = ''; };
+
+function describeTx(b) {
+  const t = b[2], p = b.slice(6, 6 + b[3]);
+  if (t === 0x04) return 'Request ' + (NAMES[p[0]] || '0x' + p[0].toString(16));
+  if (t === 0x10) return 'Control r/p/y/t = ' + Array.from(p, sgn).join(', ');
+  if (t === 0x11) {
+    if (p[0] === 0x01) return 'Command Stop（緊急停止）';
+    if (p[0] === 0x07) return 'Command FlightEvent ' + (p[1] === 0x11 ? '起飛' : p[1] === 0x12 ? '降落' : '0x' + p[1].toString(16));
+    return 'Command 0x' + p[0].toString(16) + ' 選項 0x' + p[1].toString(16);
+  }
+  return '';
+}
+
+// ---------- 傳送 ----------
+function send(bytes) {
+  if (!writer) return Promise.resolve();
+  if (!(bytes[2] === 0x04 && $('hidePoll').checked)) log('tx', 'TX  ' + hex(bytes) + '   ' + describeTx(bytes));
+  wq = wq.then(() => writer.write(bytes)).catch(e => { log('err', '寫入失敗：' + e.message); });
+  return wq;
+}
+const poll = t => send(P.req(t));
+
+// ---------- 接收 ----------
+function i16(data) { const v = new DataView(Uint8Array.from(data).buffer); return n => v.getInt16(n * 2, true); }
+const hits = {};
+function onFrame(f) {
+  (hits[f.type] = hits[f.type] || []).push(performance.now());
+  const polled = [T_STATE, T_RANGE, T_MOTION, T_RAW, T_POS, T_JOY].includes(f.type);
+  const now = performance.now();
+  let note = '';
+  if (f.type === T_STATE && f.data.length === 8) {
+    st.flight = f.data[1]; st.battery = f.data[7]; st.t = now; twin.flight(st.flight);
+    $('bat').textContent = st.battery + ' %';
+    $('mode').textContent = FLIGHT[st.flight] || '0x' + st.flight.toString(16);
+    $('bat').classList.remove('stale'); $('mode').classList.remove('stale');
+    note = '電池 ' + st.battery + '%，飛行模式 0x' + st.flight.toString(16);
+  } else if (f.type === T_RANGE && f.data.length === 12) {
+    const bottom = i16(f.data)(5);
+    twin.bottom(bottom);
+    $('alt').textContent = bottom > 0 ? (bottom / 10).toFixed(1) + ' cm' : '—';
+    $('alt').classList.toggle('stale', !(bottom > 0));
+    note = 'bottom = ' + bottom + ' mm';
+  } else if (f.type === T_MOTION && f.data.length === 18) {
+    const g = i16(f.data);
+    twin.att(g(6), g(7), g(8));
+    setImu('ax', g(0) / 10); setImu('ay', g(1) / 10); setImu('az', g(2) / 10);
+    setImu('gr', g(3)); setImu('gp', g(4)); setImu('gy', g(5));
+    setImu('ar', g(6)); setImu('ap', g(7)); setImu('ayaw', g(8));
+    note = 'accel ' + [g(0), g(1), g(2)].join(',') + '（×0.1 m/s²）';
+  } else if (f.type === T_JOY && f.data.length === 8) {
+    // 控制器自己持續回報的實體搖桿狀態（左 x,y、方向碼、事件；右同），與無人機無關
+    const d = f.data;
+    note = '實體搖桿 左(' + sgn(d[0]) + ',' + sgn(d[1]) + ') 右(' + sgn(d[4]) + ',' + sgn(d[5]) + ')';
+  } else if (f.type === T_POS && f.data.length === 12) {
+    const v = new DataView(Uint8Array.from(f.data).buffer);
+    const x = v.getFloat32(0, true), y = v.getFloat32(4, true), z = v.getFloat32(8, true);
+    twin.pos(x, y, z);
+    note = 'x ' + x.toFixed(3) + '  y ' + y.toFixed(3) + '  z ' + z.toFixed(3) + ' m';
+  } else if (f.type === T_RAW && f.data.length === 12) {
+    const g = i16(f.data);
+    $('raw').textContent = 'RawMotion 原始值（int16，單位未知）  accel: ' + [g(0), g(1), g(2)].join(', ') + '   gyro: ' + [g(3), g(4), g(5)].join(', ');
+    note = 'accel ' + [g(0), g(1), g(2)].join(',') + ' gyro ' + [g(3), g(4), g(5)].join(',');
+  } else {
+    log('rx', 'RX  ' + hex(f.raw) + '   （type 0x' + f.type.toString(16) + '，未解析）');
+    return;
+  }
+  if (!(polled && $('hidePoll').checked)) log('rx', 'RX  ' + hex(f.raw) + '   ' + NAMES[f.type] + '：' + note);
+}
+
+async function readLoop() {
+  const parser = new Parser();
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      if (value) for (const f of parser.feed(value)) onFrame(f);
+    }
+  } catch (e) { if (connected) log('err', '讀取中斷：' + e.message); }
+  finally { reader.releaseLock(); }
+}
+
+async function pollLoop() {
+  let i = 0;
+  while (connected) {
+    const imu = $('imuOn').checked;
+    const seq = imu ? [T_MOTION, T_RANGE, T_MOTION, T_RANGE, T_STATE, T_POS, T_RAW] : [T_STATE, T_RANGE];
+    poll(seq[i++ % seq.length]);
+    await sleep(imu ? 40 : 250);
+  }
+}
+
+// ---------- IMU 面板 ----------
+const IMU_ROWS = [
+  ['加速度', 20, 'm/s²', [['ax', 'X'], ['ay', 'Y'], ['az', 'Z']]],
+  ['角速度', 360, '°/s', [['gr', 'Roll'], ['gp', 'Pitch'], ['gy', 'Yaw']]],
+  ['姿態角', 180, '°', [['ar', 'Roll'], ['ap', 'Pitch'], ['ayaw', 'Yaw']]]
+];
+const imuScale = {};
+for (const [title, scale, unit, rows] of IMU_ROWS) {
+  const g = document.createElement('div'); g.className = 'g'; g.textContent = title + '（' + unit + '）';
+  $('imu').appendChild(g);
+  for (const [id, label] of rows) {
+    imuScale[id] = scale;
+    const l = document.createElement('span'); l.textContent = label;
+    const bar = document.createElement('div'); bar.className = 'bar'; bar.innerHTML = '<i id="b_' + id + '"></i>';
+    const v = document.createElement('span'); v.className = 'v stale'; v.id = 'v_' + id; v.textContent = '—';
+    $('imu').append(l, bar, v);
+  }
+}
+function setImu(id, val) {
+  const v = $('v_' + id);
+  v.textContent = val.toFixed(1); v.classList.remove('stale');
+  const r = Math.max(-1, Math.min(1, val / imuScale[id])) * 50;
+  const b = $('b_' + id);
+  b.style.left = (r >= 0 ? 50 : 50 + r) + '%';
+  b.style.width = Math.abs(r) + '%';
+}
+
+// ---------- 數位雙生（three.js）：只畫無人機回報的真實資料 ----------
+function initTwin() {
+  const noop = () => {};
+  const stub = { att: noop, bottom: noop, pos: noop, flight: noop, reset: noop, zeroYaw: noop, clearTrail: noop };
+  const host = $('twinHost'), cv = $('twinCanvas'), ov = $('twinOv');
+  if (!window.THREE) { ov.textContent = '無法載入 three.js（需要網路連線）。其餘功能不受影響。'; return stub; }
+  let R;
+  try { R = new THREE.WebGLRenderer({ canvas: cv, antialias: true }); }
+  catch (e) { ov.textContent = '這個瀏覽器無法使用 WebGL。其餘功能不受影響。'; return stub; }
+  R.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+
+  const d = { att: null, bottom: null, pos: null, flight: null, yawZero: 0 };
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0xe9ede8);
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x8a9a9d, 0.95));
+  const sun = new THREE.DirectionalLight(0xffffff, 0.7); sun.position.set(2, 4, 3); scene.add(sun);
+  const grid = new THREE.GridHelper(4, 16, 0x8fa0a3, 0xc2cbc5); scene.add(grid);
+
+  const mats = [];
+  const mat = (color, extra) => { const m = new THREE.MeshStandardMaterial(Object.assign({ color, roughness: 0.65, metalness: 0.05, transparent: true }, extra)); mats.push(m); return m; };
+  const dark = mat(0x2a2f31), darker = mat(0x1a1d1f), red = mat(0xd6382c), rear = mat(0x4a5256);
+  const led = mat(0x1d3a2a, { emissive: 0x3ddc84, emissiveIntensity: 1.1 });
+
+  // 機體（模型單位：機身長約 0.9，前方 = −Z）
+  const drone = new THREE.Group(); drone.rotation.order = 'YXZ'; drone.scale.setScalar(0.28);
+  const model = new THREE.Group(); drone.add(model);
+  const add = (geo, m, x, y, z) => { const o = new THREE.Mesh(geo, m); o.position.set(x || 0, y || 0, z || 0); model.add(o); return o; };
+  add(new THREE.BoxGeometry(0.46, 0.16, 0.86), dark, 0, 0, 0);
+  add(new THREE.BoxGeometry(0.34, 0.14, 0.36), darker, 0, -0.1, 0.2);               // 電池座
+  const ledMesh = add(new THREE.SphereGeometry(1, 24, 16), led, 0, 0.1, 0); ledMesh.scale.set(0.2, 0.06, 0.4); // 頂部 LED
+  const props = [];
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+    const to = new THREE.Vector3(sx * 0.7, 0.02, sz * 0.7);
+    const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, to.length(), 8), dark);
+    arm.position.copy(to).multiplyScalar(0.5);
+    arm.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), to.clone().normalize());
+    model.add(arm);
+    const ring = add(new THREE.TorusGeometry(0.46, 0.04, 8, 32), dark, to.x, to.y, to.z); ring.rotation.x = Math.PI / 2;  // 護架
+    add(new THREE.CylinderGeometry(0.07, 0.07, 0.1, 12), darker, to.x, to.y, to.z);                                          // 馬達
+    const pg = new THREE.Group(); pg.position.set(to.x, to.y + 0.09, to.z);
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.74, 0.012, 0.09), sz < 0 ? red : rear); pg.add(blade);
+    model.add(pg); props.push(pg);
+  }
+  scene.add(drone);
+
+  // 地面投影、垂直高度線、軌跡
+  const shadowMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.22 });
+  const shadow = new THREE.Mesh(new THREE.CircleGeometry(0.3, 24), shadowMat); shadow.rotation.x = -Math.PI / 2; scene.add(shadow);
+  const hl = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
+  scene.add(new THREE.Line(hl, new THREE.LineBasicMaterial({ color: 0x66767a })));
+  const MAXT = 400, tp = new Float32Array(MAXT * 3); let tn = 0;
+  const tg = new THREE.BufferGeometry(); tg.setAttribute('position', new THREE.BufferAttribute(tp, 3)); tg.setDrawRange(0, 0);
+  const trail = new THREE.Line(tg, new THREE.LineBasicMaterial({ color: 0x0e6a73 })); trail.frustumCulled = false; scene.add(trail);
+  function addTrail(x, y, z) {
+    if (tn === MAXT) tp.copyWithin(0, 3); else tn++;
+    tp.set([x, y, z], (tn - 1) * 3);
+    tg.attributes.position.needsUpdate = true; tg.setDrawRange(0, tn);
+  }
+
+  // 視角（拖曳 / 滾輪 / 雙擊重設）
+  const camera = new THREE.PerspectiveCamera(45, 1, 0.05, 50);
+  const V0 = { th: 0.7, ph: 1.05, dist: 3.2 }; let v = Object.assign({}, V0);
+  const target = new THREE.Vector3(0, 0.4, 0);
+  let drag = null;
+  cv.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY }; cv.setPointerCapture(e.pointerId); cv.style.cursor = 'grabbing'; });
+  cv.addEventListener('pointerup', () => { drag = null; cv.style.cursor = 'grab'; });
+  cv.addEventListener('pointermove', e => {
+    if (!drag) return;
+    v.th -= (e.clientX - drag.x) * 0.008; v.ph = Math.max(0.15, Math.min(1.5, v.ph - (e.clientY - drag.y) * 0.008));
+    drag = { x: e.clientX, y: e.clientY };
+  });
+  cv.addEventListener('wheel', e => { e.preventDefault(); v.dist = Math.max(1.2, Math.min(8, v.dist * (e.deltaY > 0 ? 1.1 : 0.9))); }, { passive: false });
+  cv.addEventListener('dblclick', () => { v = Object.assign({}, V0); });
+  new ResizeObserver(() => {
+    const w = host.clientWidth, h = host.clientHeight;
+    R.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
+  }).observe(host);
+
+  const LED = { 0x10: 0x3ddc84, 0x11: 0x39c6e0, 0x12: 0x39c6e0, 0x13: 0x39c6e0, 0x14: 0xf0a030, 0x20: 0xff4a3d, 0x30: 0xff4a3d, 0x31: 0xff4a3d };
+  const eul = new THREE.Euler(0, 0, 0, 'YXZ'), tq = new THREE.Quaternion(), tpos = new THREE.Vector3();
+  const rad = Math.PI / 180;
+  let lastOv = 0, hNow = 0;
+
+  function frame() {
+    requestAnimationFrame(frame);
+    const now = performance.now();
+    const live = connected && d.flight && now - d.flight.t < 1500;
+    const attOk = d.att && now - d.att.t < 1000;
+    const sg = id => ($(id).checked ? -1 : 1);
+
+    // 姿態：Roll 正＝右側下沉、Pitch 正＝機頭上仰、Yaw 正＝機頭右轉（假設，可用開關翻轉）
+    if (d.att) {
+      eul.set(sg('flipPitch') * d.att.p * rad, -sg('flipYaw') * (d.att.y - d.yawZero) * rad, -sg('flipRoll') * d.att.r * rad);
+      tq.setFromEuler(eul);
+    } else tq.identity();
+    drone.quaternion.slerp(tq, 0.3);
+
+    // 位置：高度用底部測距（mm），水平用無人機回報的 Position；沒有資料就停在原點
+    const bottom = d.bottom && d.bottom.mm > 0 ? d.bottom.mm / 1000 : 0;
+    const p = d.pos || { x: 0, y: 0 };
+    tpos.set(-p.y, bottom, -p.x);               // 無人機座標：X 前、Y 左、Z 上 → three.js：−Z 前、−X 左、Y 上
+    drone.position.lerp(new THREE.Vector3(tpos.x, tpos.y + 0.05, tpos.z), 0.25);
+    hNow = drone.position.y - 0.05;
+    shadow.position.set(drone.position.x, 0.003, drone.position.z);
+    shadow.scale.setScalar(1 / (1 + hNow * 1.5));
+    const a = hl.attributes.position; a.setXYZ(0, drone.position.x, 0.003, drone.position.z); a.setXYZ(1, drone.position.x, drone.position.y, drone.position.z); a.needsUpdate = true;
+
+    // 外觀：LED 顏色 = 飛行模式；螺旋槳轉動 = 起飛/飛行/降落（不是轉速量測）
+    const fl = d.flight ? d.flight.v : null;
+    led.emissive.setHex(live && LED[fl] ? LED[fl] : 0x555555);
+    const spin = live && fl >= 0x12 && fl <= 0x14;
+    props.forEach((pg, i) => { if (spin) pg.rotation.y += (i % 2 ? 1 : -1) * 0.9; });
+    mats.forEach(m => { m.opacity = live ? 1 : 0.35; });
+
+    target.lerp(new THREE.Vector3(drone.position.x, Math.max(drone.position.y, 0.3), drone.position.z), 0.1);
+    camera.position.set(target.x + v.dist * Math.sin(v.ph) * Math.sin(v.th), target.y + v.dist * Math.cos(v.ph), target.z + v.dist * Math.sin(v.ph) * Math.cos(v.th));
+    camera.lookAt(target);
+    R.render(scene, camera);
+
+    if (now - lastOv > 150) {
+      lastOv = now;
+      const L = [];
+      if (!connected) L.push('未連線');
+      else if (!live) L.push('沒有收到最新的無人機狀態（模型已變淡）');
+      L.push(d.att ? '姿態  Roll ' + d.att.r + '°  Pitch ' + d.att.p + '°  Yaw ' + (d.att.y - d.yawZero) + '°' + (attOk ? '' : '（資料過期）') : '姿態  —（尚無 IMU 資料）');
+      L.push(d.bottom ? (d.bottom.mm > 0 ? '高度  ' + (d.bottom.mm / 10).toFixed(1) + ' cm' : '高度  —（底部測距沒有有效讀值）') : '高度  —');
+      L.push(d.pos ? '位置  x ' + d.pos.x.toFixed(2) + '  y ' + d.pos.y.toFixed(2) + '  z ' + d.pos.z.toFixed(2) + ' m' : '位置  —（尚無回報）');
+      ov.textContent = L.join('\n');
+    }
+  }
+  requestAnimationFrame(frame);
+
+  const flying = () => d.flight && d.flight.v >= 0x12 && d.flight.v <= 0x14;
+  return {
+    att: (r, p, y) => { d.att = { t: performance.now(), r, p, y }; },
+    bottom: mm => { d.bottom = { t: performance.now(), mm }; },
+    pos: (x, y, z) => { d.pos = { t: performance.now(), x, y, z }; if (flying()) addTrail(-y, Math.max(hNow, 0) + 0.05, -x); },
+    flight: fl => { d.flight = { t: performance.now(), v: fl }; },
+    zeroYaw: () => { if (d.att) d.yawZero = d.att.y; },
+    clearTrail: () => { tn = 0; tg.setDrawRange(0, 0); },
+    reset: () => { d.att = d.bottom = d.pos = d.flight = null; d.yawZero = 0; tn = 0; tg.setDrawRange(0, 0); }
+  };
+}
+const twin = initTwin();
+$('twinYaw').onclick = () => twin.zeroYaw();
+$('twinClear').onclick = () => twin.clearTrail();
+
+// 實測每種資料「實際收到」的頻率（過去 2 秒）
+setInterval(() => {
+  if (!connected) { $('rates').textContent = ''; return; }
+  const now = performance.now(), out = [];
+  for (const [t, name] of [[T_STATE, '狀態'], [T_RANGE, '高度'], [T_MOTION, 'IMU'], [T_POS, '位置']]) {
+    const a = (hits[t] = (hits[t] || []).filter(x => now - x < 2000));
+    out.push(name + ' ' + (a.length / 2).toFixed(1) + ' Hz');
+  }
+  $('rates').textContent = '實際收到頻率：' + out.join('　');
+}, 1000);
+
+// 若超過 1.5 秒沒有新的 State，就把畫面標示為無回應
+setInterval(() => {
+  if (!connected) return;
+  const age = performance.now() - st.t;
+  const ok = st.t && age < 1500;
+  ['bat', 'mode'].forEach(id => $(id).classList.toggle('stale', !ok));
+  $('age').textContent = !st.t ? '已連線，尚未收到無人機回應（請確認無人機已開機並與控制器配對）。'
+    : ok ? '無人機回應正常。' : '已超過 ' + (age / 1000).toFixed(1) + ' 秒沒有收到無人機回應，畫面數值可能已過期。';
+}, 500);
+
+// ---------- 連線 ----------
+function setUi() {
+  $('conn').textContent = connected ? '已連線' : '未連線';
+  $('conn').classList.toggle('on', connected);
+  $('btnConnect').disabled = connected;
+  $('btnDisc').disabled = !connected;
+  $('estop').disabled = !connected;
+  $('btnLand').disabled = !connected;
+  $('btnFirst').disabled = $('btnTakeoff').disabled = !connected || busy;
+}
+function resetView() {
+  st.flight = st.battery = null; st.t = 0;
+  for (const id of ['bat', 'alt', 'mode']) { $(id).textContent = '—'; $(id).classList.add('stale'); }
+  document.querySelectorAll('.imu .v').forEach(e => { e.textContent = '—'; e.classList.add('stale'); });
+  document.querySelectorAll('.bar i').forEach(e => { e.style.width = '0'; });
+  $('raw').textContent = 'RawMotion 原始值：—';
+  twin.reset();
+  $('age').textContent = '尚未收到無人機回應。';
+}
+
+async function connect() {
+  if (!('serial' in navigator)) { log('err', '這個瀏覽器不支援 Web Serial，請使用 Chrome 或 Edge（桌面版）。'); return; }
+  try {
+    port = await navigator.serial.requestPort({ filters: [{ usbVendorId: 0x0483 }] });
+    await port.open({ baudRate: 57600 });
+  } catch (e) { log('err', '無法開啟連接埠：' + e.message); return; }
+  try { await port.setSignals({ dataTerminalReady: true, requestToSend: true }); log('info', '已設定 DTR/RTS（pyserial 開埠時的預設行為）。'); }
+  catch (e) { log('warn', 'setSignals 失敗（可忽略，若收不到回應再回報）：' + e.message); }
+  writer = port.writable.getWriter();
+  reader = port.readable.getReader();
+  connected = true; setUi();
+  log('info', '已連線 57600 8N1。只送出讀取要求，沒有送出任何動作指令。');
+  readDone = readLoop();
+  pollLoop();
+}
+
+async function disconnect(silent) {
+  if (busy && !silent) { log('warn', '飛行程序進行中，請先降落或按緊急停止，再中斷連線。'); return; }
+  connected = false;
+  try { await reader.cancel(); } catch (e) {}
+  try { await readDone; } catch (e) {}
+  try { await wq; writer.releaseLock(); } catch (e) {}
+  try { await port.close(); } catch (e) {}
+  writer = reader = null;
+  resetView(); setUi();
+  log('info', '已中斷連線。');
+}
+navigator.serial && navigator.serial.addEventListener('disconnect', e => {
+  if (e.target === port && connected) { log('err', '控制器已被拔除。'); abort = true; disconnect(true); }
+});
+$('btnConnect').onclick = connect;
+$('btnDisc').onclick = () => disconnect(false);
+
+// ---------- 確認對話框 ----------
+function confirmDialog(title, items) {
+  $('dlgTitle').textContent = title;
+  const ul = document.createElement('ul');
+  for (const s of items) { const li = document.createElement('li'); li.textContent = s; ul.appendChild(li); }
+  $('dlgBody').replaceChildren(ul);
+  return new Promise(res => {
+    const done = v => { $('dlg').close(); res(v); };
+    $('dlgYes').onclick = () => done(true);
+    $('dlgNo').onclick = () => done(false);
+    $('dlg').oncancel = () => res(false);
+    $('dlg').showModal();
+  });
+}
+
+// ---------- 飛行 ----------
+const hover = () => send(P.ctl(0, 0, 0, 0));
+async function nap(ms) {
+  const t = performance.now();
+  while (performance.now() - t < ms) { if (abort) return false; await sleep(50); }
+  return true;
+}
+async function prepare() {
+  // 與 codrone-edu 連線後的設定相同：速度 2、控制模式 Position、Headless Normal
+  await send(P.cmd(0x04, 2)); await sleep(30);
+  for (let i = 0; i < 2; i++) { await send(P.cmd(0x02, 0x11)); await sleep(30); }
+  await send(P.cmd(0x03, 0x02)); await sleep(30);
+  for (let i = 0; i < 3; i++) { hover(); await sleep(30); }
+}
+async function doTakeoff() {
+  await prepare();
+  const t0 = performance.now();
+  while (!abort && performance.now() - t0 < 4000 && st.flight !== 0x12 && st.flight !== 0x13) { send(P.takeoff()); await sleep(100); }
+  if (abort) return false;
+  if (st.flight !== 0x12 && st.flight !== 0x13) {
+    log('err', '4 秒內沒有確認起飛，改送降落指令並結束。');
+    send(P.land()); return false;
+  }
+  log('info', '已確認起飛，等待 4 秒讓起飛完成。');
+  return nap(4000);
+}
+async function doHover(ms) {
+  const t = performance.now();
+  while (performance.now() - t < ms) { if (abort) return false; hover(); await sleep(200); }
+  return true;
+}
+async function doLand() {
+  hover();
+  const t0 = performance.now();
+  while (!abort && performance.now() - t0 < 4000 && st.flight !== 0x14 && st.flight !== 0x10) { send(P.land()); await sleep(100); }
+  if (abort) return false;
+  if (st.flight !== 0x14 && st.flight !== 0x10) { log('warn', '尚未確認進入降落狀態，請觀察飛機，必要時按緊急停止。'); return false; }
+  log('info', '已確認降落，等待 4 秒。');
+  return nap(4000);
+}
+
+function run(fn) {   // 同一時間只跑一個飛行程序
+  busy = true; abort = false; setUi();
+  current = fn().catch(e => log('err', '飛行程序錯誤：' + e.message)).finally(() => { busy = false; abort = false; setUi(); log('info', '飛行程序結束。'); });
+  return current;
+}
+function preflight() {
+  if (!st.t || performance.now() - st.t > 1500) { log('err', '沒有收到最新的無人機狀態，不能起飛。'); return false; }
+  if (st.flight !== 0x10) { log('err', '飛行模式不是「待命」（目前：' + (FLIGHT[st.flight] || st.flight) + '），不能起飛。'); return false; }
+  return true;
+}
+const takeoffLines = () => [
+  '目前電池 ' + st.battery + '%，飛行模式「待命」。請確認周圍淨空、螺旋槳旁沒有人或物。',
+  '會先送出設定：速度 2、控制模式 Position、Headless Normal，再送懸停控制。',
+  '然後重複送出「起飛」指令，直到無人機回報進入起飛狀態。'
+];
+$('btnFirst').onclick = async () => {
+  if (busy || !preflight()) return;
+  const ok = await confirmDialog('首飛程序：起飛 → 懸停 2 秒 → 降落', [...takeoffLines(), '起飛完成後懸停 2 秒，接著自動送出「降落」指令。', '過程中隨時可按緊急停止（Esc）。']);
+  if (!ok) { log('info', '已取消首飛程序。'); return; }
+  run(async () => {
+    log('warn', '首飛程序開始。');
+    if (!(await doTakeoff())) return;
+    log('info', '懸停 2 秒。');
+    if (!(await doHover(2000))) return;
+    log('info', '開始降落。');
+    await doLand();
+  });
+};
+$('btnTakeoff').onclick = async () => {
+  if (busy || !preflight()) return;
+  const ok = await confirmDialog('起飛', [...takeoffLines(), '起飛後會停在空中懸停，不會自動降落；需要時請按「降落」。']);
+  if (!ok) { log('info', '已取消起飛。'); return; }
+  run(async () => { log('warn', '起飛開始。'); await doTakeoff(); });
+};
+$('btnLand').onclick = async () => {
+  if (busy) { abort = true; await current; }   // 取消目前程序後再降落
+  run(async () => { log('warn', '降落開始。'); await doLand(); });
+};
+
+async function emergencyStop() {
+  if (!connected) return;
+  abort = true;
+  log('err', '緊急停止！');
+  for (let i = 0; i < 3; i++) { send(P.stop()); await sleep(20); }
+}
+$('estop').onclick = emergencyStop;
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('dlg').open) emergencyStop(); });
+
+if (!('serial' in navigator)) log('err', '這個瀏覽器不支援 Web Serial。請使用桌面版 Chrome 或 Edge，並以 https 或 localhost 開啟本頁。');
+else log('info', '按「連接控制器」並選擇 CoDrone EDU 控制器的 USB 連接埠。');
+setUi();
+</script>
+</body>
+</html>
